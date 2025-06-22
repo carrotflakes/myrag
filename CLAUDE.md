@@ -21,11 +21,12 @@ This is a modern Tool-Calling RAG (Retrieval-Augmented Generation) system built 
 
 The system follows a layered architecture optimized for interactive chat experiences:
 
-**Document Management Layer** (`src/documentStore.ts`, `src/createDocumentStore.ts`):
-- `InMemoryDocumentStore`: In-memory document storage with chunking capabilities
+**Document Management Layer** (`src/documentStore.ts`, `src/sqliteDocumentStore.ts`, `src/createDocumentStore.ts`):
+- `SQLiteDocumentStore`: Persistent SQLite-based document storage (default)
+- `InMemoryDocumentStore`: Alternative in-memory storage for development/testing
 - `TextChunker`: Splits documents into 500-character chunks with 100-character overlap
-- `createDocumentStore()`: Factory function that auto-loads all markdown files from `/source` directory
-- Built-in content management with metadata tracking
+- `createDocumentStore()`: Factory function with automatic persistence detection and source file loading
+- Hybrid storage: SQLite for documents, memory for vector embeddings
 
 **Embedding & Search Layer** (`src/embeddings.ts`, `src/embeddingCache.ts`):
 - `EmbeddingService`: OpenAI text-embedding-3-small integration
@@ -56,11 +57,11 @@ The system follows a layered architecture optimized for interactive chat experie
 - More contextual and flexible than traditional RAG approaches
 - Supports complex multi-step reasoning with tool chaining
 
-**Memory-First Approach**:
-- All documents and embeddings stored in memory for fast access
-- File-based embedding cache for persistence across restarts
-- Documents must be reloaded from `/source` directory on startup
-- No database persistence (simplified architecture)
+**Hybrid Persistence Strategy**:
+- Documents: Persistent SQLite storage (survives restarts)
+- Vector embeddings: In-memory for fast search, automatically restored from database
+- Embedding cache: File-based persistence for API cost optimization
+- Smart initialization: Existing documents auto-loaded, source files processed only if database is empty
 
 **Interactive Chat Experience**:
 - Real-time chat interface with command support
@@ -76,6 +77,7 @@ The system follows a layered architecture optimized for interactive chat experie
 ### Environment Setup
 
 Requires `OPENAI_API_KEY` environment variable. The system will create:
+- `documents.db` - SQLite database for persistent document storage
 - `logs/combined.log` - All application logs with rotation (5MB, 5 files)
 - `logs/error.log` - Error-only logs
 - `.cache/embeddings.json` - Base64-encoded embedding cache
@@ -94,17 +96,21 @@ Optional environment variables:
 5. Use `quit` or `exit` to terminate
 
 **Document Management**:
-- Place markdown files in `/source` directory for automatic loading
-- Documents are chunked and embedded automatically
-- File loading supports runtime document addition via CLI commands
+- Place markdown files in `/source` directory for initial automatic loading
+- Documents persist across restarts via SQLite database
+- Runtime document addition via CLI `load <filename>` command
+- Vector embeddings automatically rebuilt from database on startup
 
 ### Tool Response Format
 
 Tools return structured responses with clear source attribution:
 ```
-<chunk docId="filename.md" chunkIndex="0">
+<document id="document-uuid">
+<chunk indexStart="0" indexEnd="2">
 Document content here...
 </chunk>
+<chunk indexStart="5" indexEnd="7" omitted/>
+</document>
 ```
 
-This format ensures traceability from AI responses back to source documents.
+This format ensures traceability from AI responses back to source documents, with support for chunk ranges and omitted content indicators.
