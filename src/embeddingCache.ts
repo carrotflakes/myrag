@@ -43,7 +43,7 @@ export class FileEmbeddingCache implements EmbeddingCache {
       await this.ensureCacheDir();
       const data = await fs.readFile(this.cacheFile, 'utf-8');
       const entries: Record<string, CacheEntry> = JSON.parse(data);
-      
+
       this.cache = new Map(Object.entries(entries));
       this.loaded = true;
     } catch (error) {
@@ -84,34 +84,34 @@ export class FileEmbeddingCache implements EmbeddingCache {
     await this.loadCache();
     const key = this.generateKey(text);
     const entry = this.cache.get(key);
-    
+
     if (!entry) return null;
-    
+
     // Verify hash matches (for integrity check)
     if (entry.hash !== key) {
       this.cache.delete(key);
       return null;
     }
-    
+
     // Decode embedding if it's base64 encoded
     if (entry.encoded && typeof entry.embedding === 'string') {
       return this.decodeEmbedding(entry.embedding);
     }
-    
+
     return entry.embedding as number[];
   }
 
   async set(text: string, embedding: number[]): Promise<void> {
     await this.loadCache();
     const key = this.generateKey(text);
-    
+
     const entry: CacheEntry = {
       embedding: this.encodeEmbedding(embedding),
       timestamp: Date.now(),
       hash: key,
       encoded: true
     };
-    
+
     this.cache.set(key, entry);
     await this.saveCache();
   }
@@ -143,10 +143,10 @@ export class FileEmbeddingCache implements EmbeddingCache {
     cacheFile: string;
   }> {
     await this.loadCache();
-    
+
     let oldest: number | null = null;
     let newest: number | null = null;
-    
+
     for (const entry of this.cache.values()) {
       if (oldest === null || entry.timestamp < oldest) {
         oldest = entry.timestamp;
@@ -155,7 +155,7 @@ export class FileEmbeddingCache implements EmbeddingCache {
         newest = entry.timestamp;
       }
     }
-    
+
     return {
       size: this.cache.size,
       oldestEntry: oldest,

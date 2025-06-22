@@ -1,11 +1,5 @@
 import OpenAI from 'openai';
-import { Document } from './document.js';
-import { EmbeddingCache, FileEmbeddingCache } from './cache.js';
-
-export interface Embedding {
-  vector: number[];
-  document: Document;
-}
+import { EmbeddingCache, FileEmbeddingCache } from './embeddingCache.js';
 
 export class EmbeddingService {
   private openai: OpenAI;
@@ -13,9 +7,9 @@ export class EmbeddingService {
   private cacheHits = 0;
   private cacheMisses = 0;
 
-  constructor(apiKey?: string, cache?: EmbeddingCache) {
+  constructor(cache?: EmbeddingCache) {
     this.openai = new OpenAI({
-      apiKey: apiKey || process.env.OPENAI_API_KEY
+      apiKey: process.env.OPENAI_API_KEY
     });
     this.cache = cache || new FileEmbeddingCache();
   }
@@ -36,30 +30,14 @@ export class EmbeddingService {
       });
 
       const embedding = response.data[0].embedding;
-      
+
       // Store in cache
       await this.cache.set(text, embedding);
-      
+
       return embedding;
     } catch (error) {
       throw new Error(`Failed to generate embedding: ${error}`);
     }
-  }
-
-  async embedDocument(document: Document): Promise<Embedding> {
-    const vector = await this.embedText(document.content);
-    return { vector, document };
-  }
-
-  async embedDocuments(documents: Document[]): Promise<Embedding[]> {
-    const embeddings: Embedding[] = [];
-    
-    for (const document of documents) {
-      const embedding = await this.embedDocument(document);
-      embeddings.push(embedding);
-    }
-
-    return embeddings;
   }
 
   cosineSimilarity(a: number[], b: number[]): number {

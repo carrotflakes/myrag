@@ -58,3 +58,6 @@ coverage/
 # Temporary folders
 tmp/
 temp/
+
+# Source documents (user content)
+source/

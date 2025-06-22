@@ -1,65 +1,145 @@
 import 'dotenv/config';
-import { RAGSystem } from './rag.js';
+
+import * as readline from 'readline';
+import * as fs from 'fs';
+import * as path from 'path';
+import { ChatState, processChat } from './chat';
+import { createKnowledgeExecutor, createKnowledgeTool } from './tools/knowledge';
+import { createDocumentStore } from './createDocumentStore';
+import logger from './logger';
 
 async function main() {
-  const rag = new RAGSystem();
-
-  console.log('RAGシステムにドキュメントを追加中...');
+  logger.info('Starting RAG System Interactive Chat UI');
   
-  await rag.addDocuments([
-    {
-      text: 'TypeScriptは、Microsoft社が開発したオープンソースのプログラミング言語です。JavaScriptのスーパーセットとして設計されており、静的型付けを提供します。',
-      metadata: { title: 'TypeScript概要', category: 'プログラミング言語' }
-    },
-    {
-      text: 'Node.jsは、V8 JavaScriptエンジンで動作するJavaScriptランタイム環境です。サーバーサイドでJavaScriptを実行することができます。',
-      metadata: { title: 'Node.js概要', category: 'ランタイム' }
-    },
-    {
-      text: 'RAG（Retrieval-Augmented Generation）は、情報検索と生成を組み合わせたAI技術です。関連する文書を検索し、その情報を基に回答を生成します。',
-      metadata: { title: 'RAG技術', category: 'AI技術' }
-    }
-  ]);
+  const docStore = createDocumentStore();
 
-  console.log(`ドキュメント数: ${rag.getDocumentCount()}`);
-  console.log('\n質問に答えます...\n');
+  const instructions = `
+You are a helpful assistant with access to a knowledge base.
+Use the knowledge tool to search, add, and delete documents in the knowledge base.
+When answering questions, first search for relevant documents.
+If no relevant information is found, say "I don't know".
+Always provide concise and accurate answers based on the knowledge base.
+ `.trim();
 
-  const questions = [
-    'TypeScriptとは何ですか？',
-    'Node.jsについて教えてください',
-    'RAGの仕組みを説明してください'
-  ];
+  const tools = [createKnowledgeTool()];
+  const toolExecutors = {
+    ...createKnowledgeExecutor(docStore),
+  };
 
-  for (const question of questions) {
-    console.log(`質問: ${question}`);
-    try {
-      const result = await rag.query(question);
-      console.log(`回答: ${result.answer}`);
-      console.log(`類似度スコア: ${result.sources.map(s => s.similarity.toFixed(3)).join(', ')}`);
-    } catch (error) {
-      console.error(`エラーが発生しました: ${error}`);
-    }
-    console.log('---\n');
-  }
+  let state: ChatState = {
+    messages: [],
+    previousResponseId: null
+  };
 
-  // キャッシュ統計表示
-  const cacheStats = rag.getCacheStats();
-  const cacheInfo = await rag.getCacheInfo();
-  
-  console.log('キャッシュ統計:');
-  console.log(`- ヒット数: ${cacheStats.hits}`);
-  console.log(`- ミス数: ${cacheStats.misses}`);
-  console.log(`- ヒット率: ${(cacheStats.hitRate * 100).toFixed(1)}%`);
-  console.log(`- キャッシュサイズ: ${cacheInfo.size} エントリ`);
-  console.log(`- キャッシュファイル: ${cacheInfo.cacheFile}`);
-  if (cacheInfo.oldestEntry) {
-    console.log(`- 最古エントリ: ${new Date(cacheInfo.oldestEntry).toLocaleString()}`);
-  }
-  if (cacheInfo.newestEntry) {
-    console.log(`- 最新エントリ: ${new Date(cacheInfo.newestEntry).toLocaleString()}`);
-  }
+  logger.info('RAG System initialized', {
+    toolsCount: tools.length,
+    executorsCount: Object.keys(toolExecutors).length
+  });
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  console.log('🤖 Interactive Chat UI - RAG System');
+  console.log('Type your questions or commands:');
+  console.log('- "quit" or "exit" to exit');
+  console.log('- "clear" to clear chat history');
+  console.log('- "load <filename>" to load a document');
+  console.log('');
+
+  const askQuestion = () => {
+    rl.question('You: ', async (input) => {
+      const query = input.trim();
+
+      if (query.toLowerCase() === 'quit' || query.toLowerCase() === 'exit') {
+        logger.info('User initiated shutdown');
+        console.log('Goodbye!');
+        rl.close();
+        return;
+      }
+
+      if (query.toLowerCase() === 'clear') {
+        logger.info('Chat history cleared by user');
+        state = {
+          messages: [],
+          previousResponseId: null
+        };
+        console.log('Chat history cleared.\n');
+        askQuestion();
+        return;
+      }
+
+      if (query.toLowerCase().startsWith('load ')) {
+        const filename = query.slice(5).trim();
+        logger.info('Document load requested', { filename });
+        try {
+          if (!fs.existsSync(filename)) {
+            logger.warn('File not found', { filename });
+            console.log(`File not found: ${filename}\n`);
+            askQuestion();
+            return;
+          }
+
+          const content = fs.readFileSync(filename, 'utf8');
+          const docId = path.basename(filename);
+
+          await docStore.addDocument(content, {
+            filename: filename,
+            loadedAt: new Date().toISOString()
+          });
+
+          logger.info('Document loaded successfully', {
+            filename,
+            docId,
+            contentLength: content.length
+          });
+          
+          console.log(`Document loaded: ${filename} (ID: ${docId})\n`);
+        } catch (error) {
+          logger.error('Error loading document', {
+            filename,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          console.error('Error loading document:', error instanceof Error ? error.message : error);
+          console.log('');
+        }
+        askQuestion();
+        return;
+      }
+
+      if (!query) {
+        askQuestion();
+        return;
+      }
+
+      try {
+        console.log('🤖 Processing...');
+        logger.info('Processing user query', { query });
+        
+        state = await processChat(instructions, tools, toolExecutors, state, query);
+
+        const lastMessage = state.messages[state.messages.length - 1];
+        if (lastMessage && lastMessage.role === 'ai') {
+          logger.info('Assistant response generated', {
+            responseLength: lastMessage.content.length
+          });
+          console.log(`Assistant: ${lastMessage.content}\n`);
+        }
+      } catch (error) {
+        logger.error('Error processing query', {
+          query,
+          error: error instanceof Error ? error.message : String(error)
+        });
+        console.error('Error:', error instanceof Error ? error.message : error);
+        console.log('');
+      }
+
+      askQuestion();
+    });
+  };
+
+  askQuestion();
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch(console.error);
-}
+main().catch(console.error);
