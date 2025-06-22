@@ -30,7 +30,23 @@ export function createKnowledgeTool() {
   return {
     type: 'function' as const,
     name: toolName,
-    description: 'Manage knowledge base with search, add, and delete operations.',
+    description: `
+Manage knowledge base with search, add, delete, and retrieve document chunks.
+
+## Term Definitions
+- Document: An unit of knowledge.
+- Knowledge Base: A collection of documents.
+- Chunk: A part of a document, used for efficient retrieval.
+
+## Actions
+- **search**: Search for relevant chunks based on a query.
+- **getChunk**: Retrieve a specific chunk by document ID and index.
+- **add**: Add a new document to the knowledge base.
+- **delete**: Delete a document from the knowledge base.
+
+## Tips
+- Once you have retrieved a chunk with **search**, you can retrieve the chunks before and after it with **getChunk**.
+`.trim(),
     strict: true,
     parameters: {
       type: 'object',
@@ -42,7 +58,7 @@ export function createKnowledgeTool() {
               type: 'object',
               properties: {
                 type: { type: 'string', enum: ['search'] },
-                query: { type: 'string', description: 'Search query to find relevant documents' },
+                query: { type: 'string', description: 'Search query to find relevant chunks' },
                 topK: { type: 'number', description: 'Number of top results to return (default: 3)' }
               },
               required: ['type', 'query', 'topK'],
@@ -52,8 +68,8 @@ export function createKnowledgeTool() {
               type: 'object',
               properties: {
                 type: { type: 'string', enum: ['getChunk'] },
-                documentId: { type: 'string', description: 'ID of the document to retrieve' },
-                chunkIndex: { type: 'number', description: 'Index of the chunk to retrieve' }
+                documentId: { type: 'string', description: 'ID of the document' },
+                chunkIndex: { type: 'number', description: 'Index of the chunk' }
               },
               required: ['type', 'documentId', 'chunkIndex'],
               additionalProperties: false

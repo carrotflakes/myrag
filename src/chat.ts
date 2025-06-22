@@ -160,27 +160,15 @@ export function addUserMessage(state: ChatState, content: string): ChatState {
 }
 
 export async function processChat(instructions: string, tools: Tool[], toolExecutors: Record<string, ToolExecutor>, state: ChatState, message: string): Promise<ChatState> {
-  logger.info('Processing chat message', {
-    messageLength: message.length,
-    currentMessageCount: state.messages.length
-  });
-
   state = addUserMessage(state, message);
   state = await processLlm(instructions, tools, state);
   
-  let toolCallCount = 0;
   while (true) {
     const newState = await processTool(toolExecutors, state);
     if (!newState) break;
-    toolCallCount++;
     state = newState;
     state = await processLlm(instructions, tools, state);
   }
-  
-  logger.info('Chat processing completed', {
-    toolCallCount,
-    finalMessageCount: state.messages.length
-  });
 
   return state;
 }
