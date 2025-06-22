@@ -79,7 +79,7 @@ export class ChatHistoryCompressor {
       // Create new state with summary + recent messages
       const compressedState: ChatState = {
         messages: [summaryMessage, ...recentMessages],
-        previousResponseId: state.previousResponseId
+        previousResponseId: null,
       };
 
       const compressionRatio = compressedState.messages.length / totalMessages;
