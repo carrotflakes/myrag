@@ -17,12 +17,20 @@ const schema = z.object({
       chunkIndexEnd: z.number(),
     }),
     z.object({
-      type: z.literal('add'),
+      type: z.literal('addDocument'),
       content: z.string(),
     }),
     z.object({
-      type: z.literal('delete'),
+      type: z.literal('deleteDocument'),
       documentId: z.string()
+    }),
+    z.object({
+      type: z.literal('editChunk'),
+      documentId: z.string(),
+      chunkIndexStart: z.number(),
+      chunkIndexEnd: z.number(),
+      oldContent: z.string(),
+      newContent: z.string(),
     }),
   ]),
 });
@@ -37,13 +45,14 @@ Manage knowledge base with search, add, delete, and retrieve document chunks.
 ## Term Definitions
 - Document: An unit of knowledge.
 - Knowledge Base: A collection of documents.
-- Chunk: A part of a document, used for efficient retrieval.
+- Chunk: A part of a document.
 
 ## Actions
 - **search**: Search for relevant chunks based on a query.
 - **getChunk**: Retrieve a specific chunk by document ID and index.
-- **add**: Add a new document to the knowledge base.
-- **delete**: Delete a document from the knowledge base.
+- **addDocument**: Add a new document to the knowledge base.
+- **deleteDocument**: Delete a document from the knowledge base.
+- **editChunk**: Edit a specific chunk in a document.
 
 ## Tips
 - The **omitted chunks** can be retrieved with **getChunk**.
@@ -79,7 +88,7 @@ Manage knowledge base with search, add, delete, and retrieve document chunks.
             {
               type: 'object',
               properties: {
-                type: { type: 'string', enum: ['add'] },
+                type: { type: 'string', enum: ['addDocument'] },
                 content: { type: 'string', description: 'Content of the document to add' },
               },
               required: ['type', 'content'],
@@ -88,10 +97,23 @@ Manage knowledge base with search, add, delete, and retrieve document chunks.
             {
               type: 'object',
               properties: {
-                type: { type: 'string', enum: ['delete'] },
+                type: { type: 'string', enum: ['deleteDocument'] },
                 documentId: { type: 'string', description: 'ID of the document to delete' }
               },
               required: ['type', 'documentId'],
+              additionalProperties: false
+            },
+            {
+              type: 'object',
+              properties: {
+                type: { type: 'string', enum: ['editChunk'] },
+                documentId: { type: 'string', description: 'ID of the document' },
+                chunkIndexStart: { type: 'number', description: 'Starting chunk index to edit' },
+                chunkIndexEnd: { type: 'number', description: 'Ending chunk index to edit' },
+                oldContent: { type: 'string', description: 'Current content to be replaced' },
+                newContent: { type: 'string', description: 'New content to replace with' }
+              },
+              required: ['type', 'documentId', 'chunkIndexStart', 'chunkIndexEnd', 'oldContent', 'newContent'],
               additionalProperties: false
             }
           ],
@@ -126,15 +148,24 @@ export function createKnowledgeExecutor(docStore: DocumentStore) {
             end: chunkIndexEnd
           }]);
         }
-        case 'add': {
+        case 'addDocument': {
           const { content } = parsedArgs.action;
           const document = await docStore.addDocument(content);
           return `Document added with ID: ${document.id}`;
         }
-        case 'delete': {
+        case 'deleteDocument': {
           const { documentId } = parsedArgs.action;
           const deleted = await docStore.deleteDocument(documentId);
           return deleted ? `Document with ID ${documentId} deleted.` : `Document with ID ${documentId} not found.`;
+        }
+        case 'editChunk': {
+          const { documentId, chunkIndexStart, chunkIndexEnd, oldContent, newContent } = parsedArgs.action;
+          const result = await docStore.editChunk(documentId, chunkIndexStart, chunkIndexEnd, oldContent, newContent);
+          if (typeof result === 'string') {
+            return `Failed to edit chunks ${chunkIndexStart}-${chunkIndexEnd} in document ${documentId}: ${result}`;
+          } else {
+            return `Successfully edited chunks ${chunkIndexStart}-${chunkIndexEnd}. New document ID: ${result.id}`;
+          }
         }
         default:
           throw new Error('Unknown action');

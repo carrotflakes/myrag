@@ -272,6 +272,54 @@ export class SQLiteDocumentStore implements DocumentStore {
     }
   }
 
+  async editChunk(documentId: string, chunkIndexStart: number, chunkIndexEnd: number, oldContent: string, newContent: string): Promise<Document | string> {
+    try {
+      const document = await this.getDocument(documentId);
+      if (!document) {
+        return "Document not found";
+      }
+
+      // Get the chunks to edit
+      const chunkStart = this.chunks.find(c => c.chunk.documentId === documentId && c.chunk.chunkIndex === chunkIndexStart);
+      if (!chunkStart) {
+        return "Chunk start not found";
+      }
+      const chunkEnd = this.chunks.find(c => c.chunk.documentId === documentId && c.chunk.chunkIndex === chunkIndexEnd);
+      if (!chunkEnd) {
+        return "Chunk end not found";
+      }
+      const text = document.content.slice(chunkStart.chunk.range.start, chunkEnd.chunk.range.end);
+
+      const replacedText = text.replace(oldContent, newContent);
+      if (replacedText === text) {
+        return "Content is the same, no changes made";
+      }
+
+      const fullContent = document.content.slice(0, chunkStart.chunk.range.start) + replacedText + document.content.slice(chunkEnd.chunk.range.end);
+
+      const newDocument = await this.addDocument(fullContent, document.metadata);
+      await this.deleteDocument(documentId);
+
+      logger.info('Document chunk edited successfully', { 
+        oldDocumentId: documentId,
+        newDocumentId: newDocument.id,
+        chunkIndexStart, 
+        chunkIndexEnd,
+        contentLengthChange: newContent.length - oldContent.length
+      });
+
+      return newDocument;
+    } catch (error) {
+      logger.error('Error editing chunk in SQLite', { 
+        documentId, 
+        chunkIndexStart, 
+        chunkIndexEnd, 
+        error: error instanceof Error ? error.message : String(error)
+      });
+      return "Error editing chunk: " + (error instanceof Error ? error.message : String(error));
+    }
+  }
+
   async close(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.db.close((err) => {

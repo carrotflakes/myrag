@@ -26,6 +26,7 @@ export interface DocumentStore {
   clearAllDocuments(): Promise<void>;
   search(query: string, topK?: number): Promise<{ chunk: Chunk; similarity: number }[]>;
   getChunkByIndex(documentId: string, chunkIndex: number): Promise<Chunk | null>;
+  editChunk(documentId: string, chunkIndexStart: number, chunkIndexEnd: number, oldContent: string, newContent: string): Promise<Document | string>;
   // Persistence methods
   loadStoredDocumentsToVectorStore?(): Promise<void>;
   getVectorStoreDocumentCount?(): number;
@@ -108,6 +109,35 @@ export class InMemoryDocumentStore implements DocumentStore {
 
     // Sort by similarity and return the top K results
     return similarities.sort((a, b) => b.similarity - a.similarity).slice(0, topK);
+  }
+
+  async editChunk(documentId: string, chunkIndexStart: number, chunkIndexEnd: number, oldContent: string, newContent: string): Promise<Document | string> {
+    const document = this.documents.get(documentId);
+    if (!document) {
+      return "Document not found";
+    }
+
+    const chunkStart = this.chunks.find(c => c.chunk.documentId === documentId && c.chunk.chunkIndex === chunkIndexStart);
+    if (!chunkStart) {
+      return "Chunk start not found";
+    }
+    const chunkEnd = this.chunks.find(c => c.chunk.documentId === documentId && c.chunk.chunkIndex === chunkIndexEnd);
+    if (!chunkEnd) {
+      return "Chunk end not found";
+    }
+    const text = document.content.slice(chunkStart.chunk.range.start, chunkEnd.chunk.range.end);
+
+    const replacedText = text.replace(oldContent, newContent);
+    if (replacedText === text) {
+      return "Content is the same, no changes made";
+    }
+
+    const fullContent = document.content.slice(0, chunkStart.chunk.range.start) + replacedText + document.content.slice(chunkEnd.chunk.range.end);
+
+    const newDocument = await this.addDocument(fullContent, document.metadata);
+    await this.deleteDocument(documentId);
+
+    return newDocument;
   }
 
   // Persistence methods (no-op for in-memory store)
