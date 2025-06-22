@@ -13,7 +13,7 @@ export class SQLiteDocumentStore implements DocumentStore {
     this.db = new Database.Database(dbPath);
     this.chunker = new TextChunker();
     this.embeddingService = new EmbeddingService();
-    
+
     this.initializeDatabase();
     logger.info('SQLite document store initialized', { dbPath });
   }
@@ -32,23 +32,21 @@ export class SQLiteDocumentStore implements DocumentStore {
         )
       `);
 
-      // Create chunks table
       this.db.run(`
         CREATE TABLE IF NOT EXISTS chunks (
-          id TEXT PRIMARY KEY,
-          content TEXT NOT NULL,
           documentId TEXT NOT NULL,
           chunkIndex INTEGER NOT NULL,
+          content TEXT NOT NULL,
           rangeStart INTEGER NOT NULL,
           rangeEnd INTEGER NOT NULL,
           createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (documentId, chunkIndex),
           FOREIGN KEY (documentId) REFERENCES documents (id) ON DELETE CASCADE
         )
       `);
 
-      // Create indexes for better performance
+      // Create indexes for better performance  
       this.db.run(`CREATE INDEX IF NOT EXISTS idx_chunks_document_id ON chunks (documentId)`);
-      this.db.run(`CREATE INDEX IF NOT EXISTS idx_chunks_document_chunk ON chunks (documentId, chunkIndex)`);
     });
   }
 
@@ -59,11 +57,9 @@ export class SQLiteDocumentStore implements DocumentStore {
     // Create chunks for the document
     const { chunks, ends } = this.chunker.chunk(content);
     const chunkObjects: Chunk[] = [];
-    
+
     for (let i = 0; i < chunks.length; i++) {
-      const chunkId = `${id}_chunk_${i}`;
       const chunk: Chunk = {
-        id: chunkId,
         content: chunks[i],
         documentId: id,
         chunkIndex: i,
@@ -73,17 +69,17 @@ export class SQLiteDocumentStore implements DocumentStore {
         },
       };
       chunkObjects.push(chunk);
-      
+
       // Generate embedding and store in memory
       const embedding: number[] = await this.embeddingService.embedText(chunks[i]);
       this.chunks.push({ chunk, embedding });
     }
 
-    const document: Document = { 
-      id, 
-      content, 
-      metadata, 
-      numberOfChunks: chunks.length 
+    const document: Document = {
+      id,
+      content,
+      metadata,
+      numberOfChunks: chunks.length
     };
 
     // Store in database
@@ -95,15 +91,15 @@ export class SQLiteDocumentStore implements DocumentStore {
     // Store chunks in database
     for (const chunk of chunkObjects) {
       await this.runAsync(
-        'INSERT INTO chunks (id, content, documentId, chunkIndex, rangeStart, rangeEnd) VALUES (?, ?, ?, ?, ?, ?)',
-        [chunk.id, chunk.content, chunk.documentId, chunk.chunkIndex, chunk.range.start, chunk.range.end]
+        'INSERT INTO chunks (documentId, chunkIndex, content, rangeStart, rangeEnd) VALUES (?, ?, ?, ?, ?)',
+        [chunk.documentId, chunk.chunkIndex, chunk.content, chunk.range.start, chunk.range.end]
       );
     }
 
-    logger.info('Document added to SQLite store', { 
-      documentId: id, 
+    logger.info('Document added to SQLite store', {
+      documentId: id,
       chunksCount: chunks.length,
-      contentLength: content.length 
+      contentLength: content.length
     });
 
     return document;
@@ -155,12 +151,12 @@ export class SQLiteDocumentStore implements DocumentStore {
 
       // Remove from database (chunks will be deleted by CASCADE)
       const result = await this.runAsync('DELETE FROM documents WHERE id = ?', [id]);
-      
+
       const deleted = (result as any).changes > 0;
       if (deleted) {
         logger.info('Document deleted from SQLite store', { documentId: id });
       }
-      
+
       return deleted;
     } catch (error) {
       logger.error('Error deleting document from SQLite', { id, error });
@@ -182,7 +178,7 @@ export class SQLiteDocumentStore implements DocumentStore {
 
   async search(query: string, topK: number = 5): Promise<{ chunk: Chunk; similarity: number }[]> {
     const queryEmbedding = await this.embeddingService.embedText(query);
-    
+
     const results = this.chunks.map(item => ({
       chunk: item.chunk,
       similarity: this.cosineSimilarity(queryEmbedding, item.embedding)
@@ -196,14 +192,13 @@ export class SQLiteDocumentStore implements DocumentStore {
   async getChunkByIndex(documentId: string, chunkIndex: number): Promise<Chunk | null> {
     try {
       const row = await this.getAsync(
-        'SELECT id, content, documentId, chunkIndex, rangeStart, rangeEnd FROM chunks WHERE documentId = ? AND chunkIndex = ?',
+        'SELECT documentId, chunkIndex, content, rangeStart, rangeEnd FROM chunks WHERE documentId = ? AND chunkIndex = ?',
         [documentId, chunkIndex]
       ) as any;
 
       if (!row) return null;
 
       return {
-        id: row.id,
         content: row.content,
         documentId: row.documentId,
         chunkIndex: row.chunkIndex,
@@ -222,19 +217,18 @@ export class SQLiteDocumentStore implements DocumentStore {
   async loadStoredDocumentsToVectorStore(): Promise<void> {
     try {
       logger.info('Loading stored documents into vector store');
-      
+
       // Clear existing in-memory chunks
       this.chunks = [];
 
       // Get all chunks from database
       const rows = await this.allAsync(
-        'SELECT id, content, documentId, chunkIndex, rangeStart, rangeEnd FROM chunks ORDER BY documentId, chunkIndex'
+        'SELECT documentId, chunkIndex, content, rangeStart, rangeEnd FROM chunks ORDER BY documentId, chunkIndex'
       ) as any[];
 
       // Generate embeddings for all chunks
       for (const row of rows) {
         const chunk: Chunk = {
-          id: row.id,
           content: row.content,
           documentId: row.documentId,
           chunkIndex: row.chunkIndex,
@@ -248,8 +242,8 @@ export class SQLiteDocumentStore implements DocumentStore {
         this.chunks.push({ chunk, embedding });
       }
 
-      logger.info('Loaded documents into vector store', { 
-        chunksCount: this.chunks.length 
+      logger.info('Loaded documents into vector store', {
+        chunksCount: this.chunks.length
       });
     } catch (error) {
       logger.error('Error loading stored documents to vector store', { error });
@@ -300,20 +294,20 @@ export class SQLiteDocumentStore implements DocumentStore {
       const newDocument = await this.addDocument(fullContent, document.metadata);
       await this.deleteDocument(documentId);
 
-      logger.info('Document chunk edited successfully', { 
+      logger.info('Document chunk edited successfully', {
         oldDocumentId: documentId,
         newDocumentId: newDocument.id,
-        chunkIndexStart, 
+        chunkIndexStart,
         chunkIndexEnd,
         contentLengthChange: newContent.length - oldContent.length
       });
 
       return newDocument;
     } catch (error) {
-      logger.error('Error editing chunk in SQLite', { 
-        documentId, 
-        chunkIndexStart, 
-        chunkIndexEnd, 
+      logger.error('Error editing chunk in SQLite', {
+        documentId,
+        chunkIndexStart,
+        chunkIndexEnd,
         error: error instanceof Error ? error.message : String(error)
       });
       return "Error editing chunk: " + (error instanceof Error ? error.message : String(error));
@@ -337,7 +331,7 @@ export class SQLiteDocumentStore implements DocumentStore {
   // Helper methods for promisifying SQLite methods
   private runAsync(sql: string, params: any[] = []): Promise<any> {
     return new Promise((resolve, reject) => {
-      this.db.run(sql, params, function(err) {
+      this.db.run(sql, params, function (err) {
         if (err) reject(err);
         else resolve(this);
       });
