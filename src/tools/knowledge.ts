@@ -1,7 +1,7 @@
 import { DocumentStore } from '../documentStore';
 import z from 'zod';
 
-const toolName = 'knowledge';
+export const toolName = 'knowledge_base';
 
 const schema = z.object({
   action: z.union([

@@ -1,13 +1,14 @@
 import 'dotenv/config';
 
-import * as readline from 'readline';
 import * as fs from 'fs';
 import * as path from 'path';
-import { ChatState, addUserMessage, processLlm, processTool, ChatMessage } from './chat';
-import { createKnowledgeExecutor, createKnowledgeTool } from './tools/knowledge';
+import * as readline from 'readline';
+import { ChatMessage, ChatState, addUserMessage, processLlm, processTool } from './chat';
+import { defaultCompressor } from './chatCompression';
 import { createDocumentStore } from './createDocumentStore';
 import { DocumentStore } from './documentStore';
 import logger from './logger';
+import { createKnowledgeExecutor, createKnowledgeTool, toolName as knowledgeToolName } from './tools/knowledge';
 
 interface AppContext {
   docStore: DocumentStore;
@@ -41,6 +42,35 @@ function handleClearCommand(): ChatState {
     messages: [],
     previousResponseId: null
   };
+}
+
+async function handleCompressCommand(state: ChatState): Promise<{ newState: ChatState; stats: string }> {
+  logger.info('Manual compression requested');
+  console.log('📦 Compressing chat history...');
+
+  try {
+    const result = await defaultCompressor.compressHistory(state);
+    const stats = defaultCompressor.getCompressionStats(result);
+
+    logger.info('Manual compression completed', { stats });
+    console.log(`📦 ${stats}\n`);
+
+    return {
+      newState: result.compressedState,
+      stats
+    };
+  } catch (error) {
+    logger.error('Manual compression failed', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    console.error('⚠️ Compression failed:', error instanceof Error ? error.message : error);
+    console.log('');
+
+    return {
+      newState: state,
+      stats: 'Compression failed'
+    };
+  }
 }
 
 async function handleLoadCommand(filename: string, docStore: DocumentStore): Promise<boolean> {
@@ -105,6 +135,28 @@ async function processChatQuery(query: string, context: AppContext, state: ChatS
     displayMessage(latestMessage);
   }
 
+  // Check if compression is needed after processing
+  if (defaultCompressor.shouldCompress(state)) {
+    console.log('📦 Compressing chat history...');
+    logger.info('Triggering automatic chat compression', {
+      messageCount: state.messages.length
+    });
+
+    try {
+      const result = await defaultCompressor.compressHistory(state);
+      state = result.compressedState;
+
+      const stats = defaultCompressor.getCompressionStats(result);
+      console.log(`📦 ${stats}`);
+      logger.info('Chat compression completed', { stats });
+    } catch (error) {
+      logger.error('Chat compression failed', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+      console.log('⚠️ Chat compression failed, continuing with full history');
+    }
+  }
+
   logger.info('Chat processing completed', {
     finalMessageCount: state.messages.length
   });
@@ -128,6 +180,12 @@ async function handleUserInput(input: string, context: AppContext, state: ChatSt
   if (query.toLowerCase() === 'clear') {
     const newState = handleClearCommand();
     return { state: newState, shouldContinue: true };
+  }
+
+  // Handle compress command
+  if (query.toLowerCase() === 'compress') {
+    const result = await handleCompressCommand(state);
+    return { state: result.newState, shouldContinue: true };
   }
 
   // Handle load command
@@ -164,15 +222,15 @@ async function main() {
 
   const instructions = `
 You are a helpful assistant with access to a knowledge base.
-Use the knowledge tool to search, add, and delete documents in the knowledge base.
+Use the ${knowledgeToolName} tool to search, add, and delete documents in the knowledge base.
 When answering questions, first search for relevant documents.
-The knowledge tool only returns relevant chunks of text, so you must use **getChunk** to retrieve full documents if needed.
+The ${knowledgeToolName} tool only returns relevant chunks of text, so you must use **getChunk** to retrieve full documents if needed.
 If no relevant information is found, say "I don't know".
 Always provide concise and accurate answers based on the knowledge base.
 
 Special instructions:
-- When the user says "remember this", automatically add the content they want you to remember to the knowledge base using the knowledge tool with action type "add".
-- When the user says "forget this", delete the specified document from the knowledge base using the knowledge tool with action type "delete".
+- When the user says "remember this", automatically add the content they want you to remember to the knowledge base using the ${knowledgeToolName} tool with action type "add".
+- When the user says "forget this", delete the specified document from the knowledge base using the ${knowledgeToolName} tool with action type "delete".
 - When the user says "search for", use the web_search tool.
  `.trim();
 
@@ -215,6 +273,7 @@ Special instructions:
   console.log('Type your questions or commands:');
   console.log('- "quit" or "exit" to exit');
   console.log('- "clear" to clear chat history');
+  console.log('- "compress" to compress chat history');
   console.log('- "load <filename>" to load a document');
   console.log('');
 
