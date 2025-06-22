@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { ResponseInputItem } from 'openai/resources/responses/responses';
 import logger from './logger';
 
 export type ChatMessage = {
@@ -34,11 +35,21 @@ const openai = new OpenAI({
 
 export async function processLlm(instructions: string, tools: Tool[], state: ChatState): Promise<ChatState> {
   const lastMessage = state.messages.at(-1);
-  const input = lastMessage?.role === 'user' ? lastMessage.content : lastMessage?.role === 'toolResponse' ? [{
-    type: "function_call_output" as const,
-    call_id: lastMessage.id,
-    output: lastMessage.content,
-  }] : undefined;
+  const input = state.previousResponseId == null ?
+    state.messages.flatMap((msg): ResponseInputItem[] => {
+      if (msg.role === 'user') {
+        return [{ type: "message" as const, role: 'user', content: msg.content }];
+      } else if (msg.role === 'ai') {
+        return [{ type: "message" as const, role: 'assistant', content: msg.content }];
+      } else {
+        return []
+      }
+    })
+    : lastMessage?.role === 'user' ? lastMessage.content : lastMessage?.role === 'toolResponse' ? [{
+      type: "function_call_output" as const,
+      call_id: lastMessage.id,
+      output: lastMessage.content,
+    }] : undefined;
 
   logger.info('Processing LLM request', {
     inputType: lastMessage?.role,

@@ -3,8 +3,9 @@ import 'dotenv/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
-import { ChatMessage, ChatState, addUserMessage, processLlm, processTool } from './chat';
+import { addUserMessage, ChatMessage, ChatState, processLlm, processTool } from './chat';
 import { defaultCompressor } from './chatCompression';
+import { chatPersistence } from './chatStatePersistence';
 import { createDocumentStore } from './createDocumentStore';
 import { DocumentStore } from './documentStore';
 import logger from './logger';
@@ -15,6 +16,7 @@ interface AppContext {
   instructions: string;
   tools: any[];
   toolExecutors: Record<string, any>;
+  currentSessionId: string;
 }
 
 function displayMessage(message: ChatMessage): void {
@@ -29,19 +31,51 @@ function displayMessage(message: ChatMessage): void {
   }
 }
 
-function handleQuitCommand(): boolean {
+async function handleQuitCommand(context: AppContext, state: ChatState): Promise<boolean> {
   logger.info('User initiated shutdown');
+
+  try {
+    // Save session before quitting
+    await chatPersistence.saveSession(context.currentSessionId, state);
+    logger.info('Session saved before shutdown', {
+      sessionId: context.currentSessionId,
+      messageCount: state.messages.length
+    });
+  } catch (error) {
+    logger.error('Failed to save session before shutdown', {
+      sessionId: context.currentSessionId,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+
+  // Close persistence connection
+  await chatPersistence.close();
+
   console.log('Goodbye!');
   return true;
 }
 
-function handleClearCommand(): ChatState {
+async function handleClearCommand(context: AppContext): Promise<ChatState> {
   logger.info('Chat history cleared by user');
   console.log('Chat history cleared.\n');
-  return {
+
+  const newState: ChatState = {
     messages: [],
     previousResponseId: null
   };
+
+  // Auto-save the cleared state
+  try {
+    await chatPersistence.saveSession(context.currentSessionId, newState);
+    logger.info('Cleared session saved', { sessionId: context.currentSessionId });
+  } catch (error) {
+    logger.error('Failed to save cleared session', {
+      sessionId: context.currentSessionId,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+
+  return newState;
 }
 
 async function handleCompressCommand(state: ChatState): Promise<{ newState: ChatState; stats: string }> {
@@ -70,6 +104,89 @@ async function handleCompressCommand(state: ChatState): Promise<{ newState: Chat
       newState: state,
       stats: 'Compression failed'
     };
+  }
+}
+
+async function handleSaveSessionCommand(sessionId: string, state: ChatState): Promise<boolean> {
+  logger.info('Session save requested', { sessionId });
+  try {
+    await chatPersistence.saveSession(sessionId, state);
+    console.log(`Session saved: ${sessionId}\n`);
+    return true;
+  } catch (error) {
+    logger.error('Error saving session', {
+      sessionId,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    console.error('Error saving session:', error instanceof Error ? error.message : error);
+    console.log('');
+    return false;
+  }
+}
+
+async function handleLoadSessionCommand(sessionId: string): Promise<ChatState | null> {
+  logger.info('Session load requested', { sessionId });
+  try {
+    const state = await chatPersistence.loadSession(sessionId);
+    if (state) {
+      console.log(`Session loaded: ${sessionId} (${state.messages.length} messages)\n`);
+    } else {
+      console.log(`Session not found: ${sessionId}\n`);
+    }
+    return state;
+  } catch (error) {
+    logger.error('Error loading session', {
+      sessionId,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    console.error('Error loading session:', error instanceof Error ? error.message : error);
+    console.log('');
+    return null;
+  }
+}
+
+async function handleListSessionsCommand(): Promise<void> {
+  logger.info('Session list requested');
+  try {
+    const sessions = await chatPersistence.listSessions();
+    if (sessions.length === 0) {
+      console.log('No saved sessions found.\n');
+      return;
+    }
+
+    console.log('Saved sessions:');
+    sessions.forEach(session => {
+      const updatedAt = session.updatedAt.toLocaleString();
+      console.log(`- ${session.id} (${session.messageCount} messages, updated: ${updatedAt})`);
+    });
+    console.log('');
+  } catch (error) {
+    logger.error('Error listing sessions', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+    console.error('Error listing sessions:', error instanceof Error ? error.message : error);
+    console.log('');
+  }
+}
+
+async function handleDeleteSessionCommand(sessionId: string): Promise<boolean> {
+  logger.info('Session deletion requested', { sessionId });
+  try {
+    const deleted = await chatPersistence.deleteSession(sessionId);
+    if (deleted) {
+      console.log(`Session deleted: ${sessionId}\n`);
+    } else {
+      console.log(`Session not found: ${sessionId}\n`);
+    }
+    return deleted;
+  } catch (error) {
+    logger.error('Error deleting session', {
+      sessionId,
+      error: error instanceof Error ? error.message : String(error)
+    });
+    console.error('Error deleting session:', error instanceof Error ? error.message : error);
+    console.log('');
+    return false;
   }
 }
 
@@ -157,6 +274,20 @@ async function processChatQuery(query: string, context: AppContext, state: ChatS
     }
   }
 
+  // Auto-save session after processing
+  try {
+    await chatPersistence.saveSession(context.currentSessionId, state);
+    logger.info('Session auto-saved', {
+      sessionId: context.currentSessionId,
+      messageCount: state.messages.length
+    });
+  } catch (error) {
+    logger.error('Failed to auto-save session', {
+      sessionId: context.currentSessionId,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+
   logger.info('Chat processing completed', {
     finalMessageCount: state.messages.length
   });
@@ -171,14 +302,14 @@ async function handleUserInput(input: string, context: AppContext, state: ChatSt
 
   // Handle quit command
   if (query.toLowerCase() === 'quit' || query.toLowerCase() === 'exit') {
-    handleQuitCommand();
+    await handleQuitCommand(context, state);
     rl.close();
     return { state, shouldContinue: false };
   }
 
   // Handle clear command
   if (query.toLowerCase() === 'clear') {
-    const newState = handleClearCommand();
+    const newState = await handleClearCommand(context);
     return { state: newState, shouldContinue: true };
   }
 
@@ -192,6 +323,36 @@ async function handleUserInput(input: string, context: AppContext, state: ChatSt
   if (query.toLowerCase().startsWith('load ')) {
     const filename = query.slice(5).trim();
     await handleLoadCommand(filename, context.docStore);
+    return { state, shouldContinue: true };
+  }
+
+  // Handle save session command
+  if (query.toLowerCase().startsWith('save ')) {
+    const sessionId = query.slice(5).trim() || context.currentSessionId;
+    await handleSaveSessionCommand(sessionId, state);
+    return { state, shouldContinue: true };
+  }
+
+  // Handle load session command
+  if (query.toLowerCase().startsWith('session ')) {
+    const sessionId = query.slice(8).trim();
+    const loadedState = await handleLoadSessionCommand(sessionId);
+    if (loadedState) {
+      return { state: loadedState, shouldContinue: true };
+    }
+    return { state, shouldContinue: true };
+  }
+
+  // Handle list sessions command
+  if (query.toLowerCase() === 'sessions') {
+    await handleListSessionsCommand();
+    return { state, shouldContinue: true };
+  }
+
+  // Handle delete session command
+  if (query.toLowerCase().startsWith('delete ')) {
+    const sessionId = query.slice(7).trim();
+    await handleDeleteSessionCommand(sessionId);
     return { state, shouldContinue: true };
   }
 
@@ -215,8 +376,35 @@ async function handleUserInput(input: string, context: AppContext, state: ChatSt
   }
 }
 
+function generateSessionId(): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const random = Math.random().toString(36).substring(2, 8);
+  return `session-${timestamp}-${random}`;
+}
+
+async function tryLoadLastSession(): Promise<{ state: ChatState; sessionId: string } | null> {
+  try {
+    const sessions = await chatPersistence.listSessions();
+    if (sessions.length > 0) {
+      const lastSession = sessions[0]; // Most recent session
+      const state = await chatPersistence.loadSession(lastSession.id);
+      if (state) {
+        return { state, sessionId: lastSession.id };
+      }
+    }
+  } catch (error) {
+    logger.error('Failed to load last session', {
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+  return null;
+}
+
 async function main() {
   logger.info('Starting RAG System Interactive Chat UI');
+
+  // Initialize persistence
+  await chatPersistence.initialize();
 
   const docStore = await createDocumentStore();
 
@@ -247,16 +435,28 @@ Special instructions:
     ...createKnowledgeExecutor(docStore),
   };
 
+  // Try to load the last session or create a new one
+  const lastSession = await tryLoadLastSession();
+  let currentSessionId: string;
+  let state: ChatState;
+
+  if (lastSession) {
+    currentSessionId = lastSession.sessionId;
+    state = lastSession.state;
+  } else {
+    currentSessionId = generateSessionId();
+    state = {
+      messages: [],
+      previousResponseId: null
+    };
+  }
+
   const context: AppContext = {
     docStore,
     instructions,
     tools,
-    toolExecutors
-  };
-
-  let state: ChatState = {
-    messages: [],
-    previousResponseId: null
+    toolExecutors,
+    currentSessionId
   };
 
   logger.info('RAG System initialized', {
@@ -270,11 +470,19 @@ Special instructions:
   });
 
   console.log('🤖 Interactive Chat UI - RAG System');
+  console.log(`Current session: ${currentSessionId}`);
+  if (state.messages.length > 0) {
+    console.log(`Loaded previous session with ${state.messages.length} messages`);
+  }
   console.log('Type your questions or commands:');
   console.log('- "quit" or "exit" to exit');
   console.log('- "clear" to clear chat history');
   console.log('- "compress" to compress chat history');
   console.log('- "load <filename>" to load a document');
+  console.log('- "save [session_id]" to save current session');
+  console.log('- "session <session_id>" to load a session');
+  console.log('- "sessions" to list all sessions');
+  console.log('- "delete <session_id>" to delete a session');
   console.log('');
 
   const askQuestion = () => {
