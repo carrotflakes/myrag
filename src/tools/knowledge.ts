@@ -9,6 +9,7 @@ const schema = z.object({
       type: z.literal('search'),
       query: z.string(),
       topK: z.number(),
+      skip: z.number(),
     }),
     z.object({
       type: z.literal('getChunk'),
@@ -52,7 +53,7 @@ Manage knowledge base with search, add, delete, and retrieve document chunks.
 - Documents should include headings for better organization and navigation.
 
 ## Actions
-- **search**: Search for relevant chunks based on a query.
+- **search**: Search for relevant chunks based on a query. Use skip parameter for pagination.
 - **getChunk**: Retrieve a specific chunk by document ID and index.
 - **addDocument**: Add a new document to the knowledge base.
 - **deleteDocument**: Delete a document from the knowledge base.
@@ -73,9 +74,10 @@ Manage knowledge base with search, add, delete, and retrieve document chunks.
               properties: {
                 type: { type: 'string', enum: ['search'] },
                 query: { type: 'string', description: 'Search query to find relevant chunks' },
-                topK: { type: 'number', description: 'Number of top results to return (default: 3)' }
+                topK: { type: 'number', description: 'Number of top results to return (default: 3)' },
+                skip: { type: 'number', description: 'Number of results to skip (for pagination)' }
               },
-              required: ['type', 'query', 'topK'],
+              required: ['type', 'query', 'topK', 'skip'],
               additionalProperties: false
             },
             {
@@ -136,9 +138,10 @@ export function createKnowledgeExecutor(docStore: DocumentStore) {
       const parsedArgs = schema.parse(JSON.parse(args));
       switch (parsedArgs.action.type) {
         case 'search': {
-          const { query, topK } = parsedArgs.action;
-          const results = await docStore.search(query, topK);
-          return documentRender(docStore, results.map(item => ({
+          const { query, topK, skip } = parsedArgs.action;
+          const results = await docStore.search(query, topK + skip);
+          const paginatedResults = results.slice(skip);
+          return documentRender(docStore, paginatedResults.map(item => ({
             documentId: item.chunk.documentId,
             start: item.chunk.chunkIndex,
             end: item.chunk.chunkIndex
