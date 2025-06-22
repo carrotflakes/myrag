@@ -49,10 +49,15 @@ Manage knowledge base with search, add, delete, and retrieve document chunks.
 - Chunk: A part of a document.
 
 ## Document Format
-- Documents are in Markdown format.
-- Documents should include headings for better organization and navigation.
+Documents are in Markdown format.
+Documents should include headings for better organization and navigation.
+
+## Documentation Guidelines
+When adding, search existing documentation to avoid contradictions; consider editing instead of adding.
 
 ## Actions
+You can perform the following actions on the knowledge base:
+
 - **search**: Search for relevant chunks based on a query. Use skip parameter for pagination.
 - **getChunk**: Retrieve a specific chunk by document ID and index.
 - **addDocument**: Add a new document to the knowledge base.
