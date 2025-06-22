@@ -232,10 +232,18 @@ async function processChatQuery(query: string, context: AppContext, state: ChatS
 
   state = addUserMessage(state, query);
 
+  let alreadyShown = state.messages.length;
+  const showMessages = (state: ChatState) => {
+    while (state.messages.length > alreadyShown) {
+      const message = state.messages[alreadyShown];
+      displayMessage(message);
+      alreadyShown++;
+    }
+  };
+
   state = await processLlm(context.instructions, context.tools, state);
 
-  const latestMessage = state.messages[state.messages.length - 1];
-  displayMessage(latestMessage);
+  showMessages(state);
 
   while (true) {
     const newState = await processTool(context.toolExecutors, state);
@@ -243,13 +251,11 @@ async function processChatQuery(query: string, context: AppContext, state: ChatS
 
     state = newState;
 
-    const lastMessage = state.messages[state.messages.length - 1];
-    displayMessage(lastMessage);
+    showMessages(state);
 
     state = await processLlm(context.instructions, context.tools, state);
 
-    const latestMessage = state.messages[state.messages.length - 1];
-    displayMessage(latestMessage);
+    showMessages(state);
   }
 
   // Check if compression is needed after processing
