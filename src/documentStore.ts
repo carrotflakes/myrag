@@ -3,6 +3,7 @@ import { EmbeddingService } from "./embeddings";
 export interface Document {
   id: string;
   content: string;
+  numberOfChunks: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -11,6 +12,10 @@ export interface Chunk {
   content: string;
   documentId: string;
   chunkIndex: number;
+  range: {
+    start: number;
+    end: number;
+  };
 }
 
 export interface DocumentStore {
@@ -37,22 +42,27 @@ export class InMemoryDocumentStore implements DocumentStore {
 
   async addDocument(content: string, metadata: Record<string, unknown> = {}): Promise<Document> {
     const id = crypto.randomUUID();
-    const document: Document = { id, content, metadata };
-    this.documents.set(id, document);
 
     // Create chunks for the document
-    const chunks = this.chunker.chunk(content);
+    const { chunks, ends } = this.chunker.chunk(content);
     for (let i = 0; i < chunks.length; i++) {
       const chunkId = `${id}_chunk_${i}`;
       const chunk: Chunk = {
         id: chunkId,
         content: chunks[i],
         documentId: id,
-        chunkIndex: i
+        chunkIndex: i,
+        range: {
+          start: i === 0 ? 0 : ends[i - 1],
+          end: ends[i]
+        },
       };
       const embedding: number[] = await this.embeddingService.embedText(chunks[i]);
       this.chunks.push({ chunk, embedding });
     }
+
+    const document: Document = { id, content, metadata, numberOfChunks: chunks.length };
+    this.documents.set(id, document);
 
     return document;
   }
@@ -101,12 +111,9 @@ export class TextChunker {
     private chunkOverlap: number = 100
   ) { }
 
-  chunk(text: string): string[] {
+  chunk(text: string) {
     const chunks: string[] = [];
-
-    if (text.length <= this.chunkSize) {
-      return [text];
-    }
+    const ends: number[] = [];
 
     let start = 0;
     let chunkIndex = 0;
@@ -116,12 +123,13 @@ export class TextChunker {
       const chunkContent = text.slice(start, end);
 
       chunks.push(chunkContent);
+      ends.push(end);
 
       if (end >= text.length) break;
       start = end - this.chunkOverlap;
       chunkIndex++;
     }
 
-    return chunks;
+    return { chunks, ends };
   }
 }

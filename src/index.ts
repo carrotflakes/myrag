@@ -23,6 +23,7 @@ Always provide concise and accurate answers based on the knowledge base.
 
 Special instructions:
 - When the user says "remember this", automatically add the content they want you to remember to the knowledge base using the knowledge tool with action type "add".
+- When the user says "forget this", delete the specified document from the knowledge base using the knowledge tool with action type "delete".
  `.trim();
 
   const tools = [createKnowledgeTool()];
@@ -70,40 +71,6 @@ Special instructions:
           previousResponseId: null
         };
         console.log('Chat history cleared.\n');
-        askQuestion();
-        return;
-      }
-
-      if (query.toLowerCase().startsWith('覚えてください') || query.toLowerCase().startsWith('remember ')) {
-        const contentToRemember = query.replace(/^(覚えてください|remember )/i, '').trim();
-        logger.info('Adding content to knowledge base', { content: contentToRemember });
-        
-        if (!contentToRemember) {
-          console.log('何を覚えればよいでしょうか？内容を教えてください。\n');
-          askQuestion();
-          return;
-        }
-
-        try {
-          const document = await docStore.addDocument(contentToRemember, {
-            source: 'user_input',
-            addedAt: new Date().toISOString()
-          });
-
-          logger.info('Content added to knowledge base', {
-            documentId: document.id,
-            contentLength: contentToRemember.length
-          });
-          
-          console.log(`✅ 覚えました！知識ベースに追加されました (ID: ${document.id})\n`);
-        } catch (error) {
-          logger.error('Error adding content to knowledge base', {
-            content: contentToRemember,
-            error: error instanceof Error ? error.message : String(error)
-          });
-          console.error('知識ベースへの追加中にエラーが発生しました:', error instanceof Error ? error.message : error);
-          console.log('');
-        }
         askQuestion();
         return;
       }

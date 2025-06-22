@@ -8,12 +8,13 @@ const schema = z.object({
     z.object({
       type: z.literal('search'),
       query: z.string(),
-      topK: z.number().default(3)
+      topK: z.number(),
     }),
     z.object({
       type: z.literal('getChunk'),
       documentId: z.string(),
-      chunkIndex: z.number(),
+      chunkIndexStart: z.number(),
+      chunkIndexEnd: z.number(),
     }),
     z.object({
       type: z.literal('add'),
@@ -45,7 +46,7 @@ Manage knowledge base with search, add, delete, and retrieve document chunks.
 - **delete**: Delete a document from the knowledge base.
 
 ## Tips
-- Once you have retrieved a chunk with **search**, you can retrieve the chunks before and after it with **getChunk**.
+- The **omitted chunks** can be retrieved with **getChunk**.
 `.trim(),
     strict: true,
     parameters: {
@@ -69,9 +70,10 @@ Manage knowledge base with search, add, delete, and retrieve document chunks.
               properties: {
                 type: { type: 'string', enum: ['getChunk'] },
                 documentId: { type: 'string', description: 'ID of the document' },
-                chunkIndex: { type: 'number', description: 'Index of the chunk' }
+                chunkIndexStart: { type: 'number', description: 'Index of the start chunk' },
+                chunkIndexEnd: { type: 'number', description: 'Index of the end chunk' }
               },
-              required: ['type', 'documentId', 'chunkIndex'],
+              required: ['type', 'documentId', 'chunkIndexStart', 'chunkIndexEnd'],
               additionalProperties: false
             },
             {
@@ -110,15 +112,19 @@ export function createKnowledgeExecutor(docStore: InMemoryDocumentStore) {
         case 'search': {
           const { query, topK } = parsedArgs.action;
           const results = await docStore.search(query, topK);
-          return results.map(item => `<chunk id=${JSON.stringify(item.chunk.id)} docId=${JSON.stringify(item.chunk.documentId)} chunkIndex=${item.chunk.chunkIndex}>\n${item.chunk.content}\n</chunk>`).join('\n');
+          return documentRender(docStore, results.map(item => ({
+            documentId: item.chunk.documentId,
+            start: item.chunk.chunkIndex,
+            end: item.chunk.chunkIndex
+          })));
         }
         case 'getChunk': {
-          const { documentId, chunkIndex } = parsedArgs.action;
-          const chunk = await docStore.getChunkByIndex(documentId, chunkIndex);
-          if (!chunk) {
-            return `Chunk with index ${chunkIndex} not found in document ${documentId}.`;
-          }
-          return `<chunk id=${JSON.stringify(chunk.id)} docId=${JSON.stringify(chunk.documentId)} chunkIndex=${chunk.chunkIndex}>\n${chunk.content}\n</chunk>`;
+          const { documentId, chunkIndexStart, chunkIndexEnd } = parsedArgs.action;
+          return documentRender(docStore, [{
+            documentId,
+            start: chunkIndexStart,
+            end: chunkIndexEnd
+          }]);
         }
         case 'add': {
           const { content } = parsedArgs.action;
@@ -135,4 +141,54 @@ export function createKnowledgeExecutor(docStore: InMemoryDocumentStore) {
       }
     }
   };
+}
+
+async function documentRender(docStore: InMemoryDocumentStore, chunks: { documentId: string, start: number, end: number }[]): Promise<string> {
+  const docIds = new Set(chunks.map(c => c.documentId));
+  const parts: string[] = [];
+
+  for (const docId of docIds) {
+    const document = await docStore.getDocument(docId);
+    if (!document) {
+      parts.push(`<document id=${JSON.stringify(docId)}>\nDocument not found.\n</document>`);
+      continue;
+    }
+
+    const mergedChunks: { start: number, end: number }[] = [];
+    for (const chunk of chunks.filter(c => c.documentId === docId).sort((a, b) => a.start - b.start)) {
+      const end = Math.min(chunk.end, document.numberOfChunks - 1);
+      if (mergedChunks.length === 0 || mergedChunks[mergedChunks.length - 1].end < chunk.start) {
+        mergedChunks.push({ start: chunk.start, end });
+      } else {
+        mergedChunks[mergedChunks.length - 1].end = Math.max(mergedChunks[mergedChunks.length - 1].end, end);
+      }
+    }
+
+    parts.push(`<document id=${JSON.stringify(docId)}>\n`);
+
+    let lastChunkIndex = 0;
+    for (const { start, end } of mergedChunks) {
+      if (start > lastChunkIndex) {
+        parts.push(`<chunk indexStart="${lastChunkIndex}" indexEnd="${start - 1}" omitted/>\n`);
+      }
+
+      const startChunk = await docStore.getChunkByIndex(docId, start);
+      const endChunk = await docStore.getChunkByIndex(docId, end);
+      if (!startChunk)
+        throw new Error(`Chunk with index ${start} not found in document ${docId}.`);
+      if (!endChunk)
+        throw new Error(`Chunk with index ${end} not found in document ${docId}.`);
+      const content = document.content.slice(startChunk.range.start, endChunk.range.end);
+      parts.push(`<chunk indexStart="${start}" indexEnd="${end}">\n${content}\n</chunk>\n`);
+
+      lastChunkIndex = end + 1;
+    }
+
+    if (mergedChunks[mergedChunks.length - 1].end < document.numberOfChunks - 1) {
+      parts.push(`<chunk indexStart="${mergedChunks[mergedChunks.length - 1].end + 1}" indexEnd="${document.numberOfChunks - 1}" omitted/>\n`);
+    }
+
+    parts.push(`</document>\n`);
+  }
+  return parts.join('');
 }
