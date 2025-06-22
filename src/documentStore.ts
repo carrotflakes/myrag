@@ -8,7 +8,6 @@ export interface Document {
 }
 
 export interface Chunk {
-  id: string;
   content: string;
   documentId: string;
   chunkIndex: number;
@@ -53,9 +52,7 @@ export class InMemoryDocumentStore implements DocumentStore {
     // Create chunks for the document
     const { chunks, ends } = this.chunker.chunk(content);
     for (let i = 0; i < chunks.length; i++) {
-      const chunkId = `${id}_chunk_${i}`;
       const chunk: Chunk = {
-        id: chunkId,
         content: chunks[i],
         documentId: id,
         chunkIndex: i,
