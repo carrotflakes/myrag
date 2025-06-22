@@ -3,7 +3,7 @@ import 'dotenv/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
-import { addUserMessage, ChatMessage, ChatState, processLlm, processTool } from './chat';
+import { addUserMessage, ChatMessage, ChatState, processLlm, processTool, Tool, ToolExecutor } from './chat';
 import { defaultCompressor } from './chatCompression';
 import { chatPersistence } from './chatStatePersistence';
 import { createDocumentStore } from './createDocumentStore';
@@ -14,8 +14,8 @@ import { createKnowledgeExecutor, createKnowledgeTool, toolName as knowledgeTool
 interface AppContext {
   docStore: DocumentStore;
   instructions: string;
-  tools: any[];
-  toolExecutors: Record<string, any>;
+  tools: Tool[];
+  toolExecutors: Record<string, ToolExecutor>;
   currentSessionId: string;
 }
 
