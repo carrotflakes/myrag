@@ -11,7 +11,7 @@ import logger from './logger';
 async function main() {
   logger.info('Starting RAG System Interactive Chat UI');
   
-  const docStore = createDocumentStore();
+  const docStore = await createDocumentStore();
 
   const instructions = `
 You are a helpful assistant with access to a knowledge base.

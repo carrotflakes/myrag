@@ -1,7 +1,8 @@
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
 import { dirname, join } from 'path/posix';
 import { fileURLToPath } from 'url';
-import { InMemoryDocumentStore } from './documentStore';
+import { InMemoryDocumentStore, DocumentStore } from './documentStore';
+import { SQLiteDocumentStore } from './sqliteDocumentStore';
 import logger from './logger';
 
 function loadMarkdownFiles(sourceDir: string): { filename: string; content: string }[] {
@@ -52,12 +53,28 @@ function loadMarkdownFiles(sourceDir: string): { filename: string; content: stri
   return files;
 }
 
-export function createDocumentStore() {
-  logger.info('Creating document store');
-  const docStore = new InMemoryDocumentStore();
-
+export async function createDocumentStore(useSQLite: boolean = true): Promise<DocumentStore> {
+  logger.info('Creating document store', { useSQLite });
+  
+  const docStore = useSQLite ? new SQLiteDocumentStore() : new InMemoryDocumentStore();
+  
+  // Check if we have existing documents in SQLite
+  if (useSQLite && docStore.getStoredDocumentCount) {
+    const existingCount = await docStore.getStoredDocumentCount();
+    if (existingCount > 0) {
+      logger.info('Found existing documents in SQLite, loading to vector store', { count: existingCount });
+      if (docStore.loadStoredDocumentsToVectorStore) {
+        await docStore.loadStoredDocumentsToVectorStore();
+      }
+      return docStore;
+    }
+  }
+  
+  // Load initial documents if no existing documents found
+  logger.info('Loading initial documents');
+  
   // Add the built-in document
-  docStore.addDocument(`Lunlun (ルンルン) is a Japanese Virtual YouTuber affiliated with NIJISANJI, debuting as part of the unit "Ayakaki" (あやかき) alongside Shiga Riko, Tamanoi Nana, Kisara, and Kozue Mone.`,
+  await docStore.addDocument(`Lunlun (ルンルン) is a Japanese Virtual YouTuber affiliated with NIJISANJI, debuting as part of the unit "Ayakaki" (あやかき) alongside Shiga Riko, Tamanoi Nana, Kisara, and Kozue Mone.`,
     { source: 'builtin', type: 'anime' }
   );
 
@@ -70,7 +87,7 @@ export function createDocumentStore() {
 
   for (const { filename, content } of markdownFiles) {
     const baseName = filename.replace(/\.md$/i, '');
-    docStore.addDocument(content, {
+    await docStore.addDocument(content, {
       source: 'file',
       filename: filename,
       baseName: baseName,
@@ -79,7 +96,8 @@ export function createDocumentStore() {
   }
 
   logger.info('Document store created', {
-    totalDocuments: markdownFiles.length + 1 // +1 for builtin
+    totalDocuments: markdownFiles.length + 1, // +1 for builtin
+    useSQLite
   });
 
   return docStore;

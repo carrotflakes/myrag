@@ -24,6 +24,12 @@ export interface DocumentStore {
   getAllDocuments(): Promise<Document[]>;
   deleteDocument(id: string): Promise<boolean>;
   clearAllDocuments(): Promise<void>;
+  search(query: string, topK?: number): Promise<{ chunk: Chunk; similarity: number }[]>;
+  getChunkByIndex(documentId: string, chunkIndex: number): Promise<Chunk | null>;
+  // Persistence methods
+  loadStoredDocumentsToVectorStore?(): Promise<void>;
+  getVectorStoreDocumentCount?(): number;
+  getStoredDocumentCount?(): Promise<number>;
 }
 
 export class InMemoryDocumentStore implements DocumentStore {
@@ -102,6 +108,19 @@ export class InMemoryDocumentStore implements DocumentStore {
 
     // Sort by similarity and return the top K results
     return similarities.sort((a, b) => b.similarity - a.similarity).slice(0, topK);
+  }
+
+  // Persistence methods (no-op for in-memory store)
+  async loadStoredDocumentsToVectorStore(): Promise<void> {
+    // No-op for in-memory store
+  }
+
+  getVectorStoreDocumentCount(): number {
+    return this.documents.size;
+  }
+
+  async getStoredDocumentCount(): Promise<number> {
+    return this.documents.size;
   }
 }
 

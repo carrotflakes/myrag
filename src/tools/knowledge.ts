@@ -1,4 +1,4 @@
-import { InMemoryDocumentStore } from '../documentStore';
+import { DocumentStore } from '../documentStore';
 import z from 'zod';
 
 const toolName = 'knowledge';
@@ -104,7 +104,7 @@ Manage knowledge base with search, add, delete, and retrieve document chunks.
   }
 }
 
-export function createKnowledgeExecutor(docStore: InMemoryDocumentStore) {
+export function createKnowledgeExecutor(docStore: DocumentStore) {
   return {
     [toolName]: async (args: string) => {
       const parsedArgs = schema.parse(JSON.parse(args));
@@ -143,7 +143,7 @@ export function createKnowledgeExecutor(docStore: InMemoryDocumentStore) {
   };
 }
 
-async function documentRender(docStore: InMemoryDocumentStore, chunks: { documentId: string, start: number, end: number }[]): Promise<string> {
+async function documentRender(docStore: DocumentStore, chunks: { documentId: string, start: number, end: number }[]): Promise<string> {
   const docIds = new Set(chunks.map(c => c.documentId));
   const parts: string[] = [];
 
