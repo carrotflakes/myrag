@@ -16,7 +16,10 @@ export type ChatMessage = {
   id: string;
   content: string;
   timestamp: Date;
-}
+} | {
+  role: "webSearchCall";
+  timestamp: Date;
+};
 
 export interface ChatState {
   messages: ChatMessage[];
@@ -56,7 +59,7 @@ export async function processLlm(instructions: string, tools: Tool[], state: Cha
       project: 'myrag',
     },
   });
-  
+
   logger.info('LLM response received', {
     responseId: response.id,
     outputCount: response.output.length
@@ -81,6 +84,11 @@ export async function processLlm(instructions: string, tools: Tool[], state: Cha
         id: output.call_id,
         functionName: output.name,
         arguments: output.arguments,
+        timestamp: new Date()
+      });
+    } else if (output.type === "web_search_call") {
+      messages.push({
+        role: 'webSearchCall',
         timestamp: new Date()
       });
     } else {
@@ -122,7 +130,7 @@ export async function processTool(tools: Record<string, ToolExecutor>, state: Ch
       callId: lastMessage.id,
       resultLength: toolResult.length
     });
-    
+
     const responseMessage: ChatMessage = {
       role: 'toolResponse',
       id: lastMessage.id,
@@ -162,7 +170,7 @@ export function addUserMessage(state: ChatState, content: string): ChatState {
 export async function processChat(instructions: string, tools: Tool[], toolExecutors: Record<string, ToolExecutor>, state: ChatState, message: string): Promise<ChatState> {
   state = addUserMessage(state, message);
   state = await processLlm(instructions, tools, state);
-  
+
   while (true) {
     const newState = await processTool(toolExecutors, state);
     if (!newState) break;
