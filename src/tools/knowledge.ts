@@ -47,6 +47,10 @@ Manage knowledge base with search, add, delete, and retrieve document chunks.
 - Knowledge Base: A collection of documents.
 - Chunk: A part of a document.
 
+## Document Format
+- Documents are in Markdown format.
+- Documents should include headings for better organization and navigation.
+
 ## Actions
 - **search**: Search for relevant chunks based on a query.
 - **getChunk**: Retrieve a specific chunk by document ID and index.
