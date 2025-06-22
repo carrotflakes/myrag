@@ -21,7 +21,7 @@ interface AppContext {
 
 function displayMessage(message: ChatMessage): void {
   if (message.role === 'ai') {
-    console.log(`🤖 Assistant: ${message.content}`);
+    console.log(`🌝 AI: ${message.content}`);
   } else if (message.role === 'toolCall') {
     console.log(`🔧 Tool Call: ${message.functionName}(${message.arguments})`);
   } else if (message.role === 'webSearchCall') {
@@ -227,7 +227,7 @@ async function handleLoadCommand(filename: string, docStore: DocumentStore): Pro
 }
 
 async function processChatQuery(query: string, context: AppContext, state: ChatState): Promise<ChatState> {
-  console.log('🤖 Processing...');
+  console.log('🌝 Processing...');
   logger.info('Processing user query', { query });
 
   state = addUserMessage(state, query);
@@ -469,7 +469,7 @@ Special instructions:
     output: process.stdout
   });
 
-  console.log('🤖 Interactive Chat UI - RAG System');
+  console.log('🌝 Interactive Chat UI - RAG System');
   console.log(`Current session: ${currentSessionId}`);
   if (state.messages.length > 0) {
     console.log(`Loaded previous session with ${state.messages.length} messages`);
