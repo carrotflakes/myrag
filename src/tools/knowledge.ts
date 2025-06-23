@@ -207,7 +207,7 @@ async function documentRender(docStore: DocumentStore, chunks: { documentId: str
       }
     }
 
-    parts.push(`<document id=${JSON.stringify(docId)}>\n`);
+    parts.push(`<document id=${JSON.stringify(docId)} createdAt=${JSON.stringify(document.createdAt.toISOString())}>\n`);
 
     let lastChunkIndex = 0;
     for (const { start, end } of mergedChunks) {

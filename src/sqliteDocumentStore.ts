@@ -79,7 +79,8 @@ export class SQLiteDocumentStore implements DocumentStore {
       id,
       content,
       metadata,
-      numberOfChunks: chunks.length
+      numberOfChunks: chunks.length,
+      createdAt: new Date()
     };
 
     // Store in database
@@ -108,7 +109,7 @@ export class SQLiteDocumentStore implements DocumentStore {
   async getDocument(id: string): Promise<Document | null> {
     try {
       const row = await this.getAsync(
-        'SELECT id, content, numberOfChunks, metadata FROM documents WHERE id = ?',
+        'SELECT id, content, numberOfChunks, metadata, createdAt FROM documents WHERE id = ?',
         [id]
       ) as any;
 
@@ -118,7 +119,8 @@ export class SQLiteDocumentStore implements DocumentStore {
         id: row.id,
         content: row.content,
         numberOfChunks: row.numberOfChunks,
-        metadata: row.metadata ? JSON.parse(row.metadata) : {}
+        metadata: row.metadata ? JSON.parse(row.metadata) : {},
+        createdAt: new Date(row.createdAt)
       };
     } catch (error) {
       logger.error('Error getting document from SQLite', { id, error });
@@ -129,14 +131,15 @@ export class SQLiteDocumentStore implements DocumentStore {
   async getAllDocuments(): Promise<Document[]> {
     try {
       const rows = await this.allAsync(
-        'SELECT id, content, numberOfChunks, metadata FROM documents ORDER BY createdAt DESC'
+        'SELECT id, content, numberOfChunks, metadata, createdAt FROM documents ORDER BY createdAt DESC'
       ) as any[];
 
       return rows.map(row => ({
         id: row.id,
         content: row.content,
         numberOfChunks: row.numberOfChunks,
-        metadata: row.metadata ? JSON.parse(row.metadata) : {}
+        metadata: row.metadata ? JSON.parse(row.metadata) : {},
+        createdAt: new Date(row.createdAt)
       }));
     } catch (error) {
       logger.error('Error getting all documents from SQLite', { error });

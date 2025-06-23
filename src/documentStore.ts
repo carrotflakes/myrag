@@ -5,6 +5,7 @@ export interface Document {
   content: string;
   numberOfChunks: number;
   metadata?: Record<string, unknown>;
+  createdAt: Date;
 }
 
 export interface Chunk {
@@ -65,7 +66,7 @@ export class InMemoryDocumentStore implements DocumentStore {
       this.chunks.push({ chunk, embedding });
     }
 
-    const document: Document = { id, content, metadata, numberOfChunks: chunks.length };
+    const document: Document = { id, content, metadata, numberOfChunks: chunks.length, createdAt: new Date() };
     this.documents.set(id, document);
 
     return document;
