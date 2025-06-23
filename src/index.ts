@@ -415,17 +415,12 @@ async function main() {
   const docStore = await createDocumentStore();
 
   const instructions = `
-You are a helpful assistant with access to a knowledge base.
-Use the ${knowledgeToolName} tool to search, add, and delete documents in the knowledge base.
+You are an agent that manages a knowledge base.
+Use the ${knowledgeToolName} tool to search, add, edit and delete documents in the knowledge base.
 When answering questions, first search for relevant documents.
 The ${knowledgeToolName} tool only returns relevant chunks of text, so you must use **getChunk** to retrieve full documents if needed.
 If no relevant information is found, say "I don't know".
 Always provide concise and accurate answers based on the knowledge base.
-
-Special instructions:
-- When the user says "remember this", automatically add the content they want you to remember to the knowledge base using the ${knowledgeToolName} tool with action type "add".
-- When the user says "forget this", delete the specified document from the knowledge base using the ${knowledgeToolName} tool with action type "delete".
-- When the user says "search for", use the web_search tool.
  `.trim();
 
   const searchContextSize = (process.env.SEARCH_CONTEXT_SIZE ?? "high") as "low" | "medium" | "high";
