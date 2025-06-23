@@ -41,6 +41,24 @@ export async function processLlm(instructions: string, tools: Tool[], state: Cha
         return [{ type: "message" as const, role: 'user', content: msg.content }];
       } else if (msg.role === 'ai') {
         return [{ type: "message" as const, role: 'assistant', content: msg.content }];
+      } else if (msg.role === 'toolCall') {
+        return [{
+          type: "function_call" as const,
+          name: msg.functionName,
+          arguments: msg.arguments,
+          call_id: msg.id,
+        }];
+      } else if (msg.role === 'toolResponse') {
+        if (!state.messages.find(m => m.role === 'toolCall' && m.id === msg.id)) {
+          return [];
+        }
+        return [{
+          type: "function_call_output" as const,
+          call_id: msg.id,
+          output: msg.content,
+        }];
+      } else if (msg.role === 'webSearchCall') {
+        return [];
       } else {
         return []
       }
