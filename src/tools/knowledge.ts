@@ -200,7 +200,7 @@ async function documentRender(docStore: DocumentStore, chunks: { documentId: str
     const mergedChunks: { start: number, end: number }[] = [];
     for (const chunk of chunks.filter(c => c.documentId === docId).sort((a, b) => a.start - b.start)) {
       const end = Math.min(chunk.end, document.numberOfChunks - 1);
-      if (mergedChunks.length === 0 || mergedChunks[mergedChunks.length - 1].end < chunk.start) {
+      if (mergedChunks.length === 0 || mergedChunks[mergedChunks.length - 1].end + 1 < chunk.start) {
         mergedChunks.push({ start: chunk.start, end });
       } else {
         mergedChunks[mergedChunks.length - 1].end = Math.max(mergedChunks[mergedChunks.length - 1].end, end);
