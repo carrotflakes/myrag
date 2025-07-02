@@ -53,6 +53,7 @@ Documents are in Markdown format.
 Documents should include headings for better organization and navigation.
 
 ## Documentation Guidelines
+Avoid duplicate or contradictory documentation.
 When adding, search existing documentation to avoid contradictions; consider editing instead of adding.
 
 ## Actions
@@ -78,7 +79,7 @@ You can perform the following actions on the knowledge base:
               type: 'object',
               properties: {
                 type: { type: 'string', enum: ['search'] },
-                query: { type: 'string', description: 'Search query to find relevant chunks' },
+                query: { type: 'string', description: 'Search query to find relevant chunks. e.g. "What is the capital of France?"' },
                 topK: { type: 'number', description: 'Number of top results to return (default: 3)' },
                 skip: { type: 'number', description: 'Number of results to skip (for pagination)' }
               },
